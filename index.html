@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Календарь">
+<meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<title>Календарь</title>
+<style>
+:root{--bg:#f5f5f7;--card:#fff;--text:#1d1d1f;--sub:#86868b;--line:#e5e5ea;--accent:#5856d6;--accent-soft:#e9e8fa}
+@media (prefers-color-scheme:dark){:root{--bg:#000;--card:#1c1c1e;--text:#f5f5f7;--sub:#8e8e93;--line:#2c2c2e;--accent:#7d7aff;--accent-soft:#2a2950}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+body{padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 24px);max-width:480px;margin:0 auto;min-height:100vh}
+header{display:flex;align-items:center;justify-content:space-between;padding:20px 4px 12px}
+h1{font-size:30px;font-weight:700;letter-spacing:-.02em;margin:0;text-transform:capitalize}
+.nav{display:flex;gap:4px}
+.nav button{width:40px;height:40px;border:0;border-radius:20px;background:transparent;color:var(--accent);font-size:22px}
+.nav button:active{background:var(--accent-soft)}
+.card{background:var(--card);border-radius:20px;padding:16px 12px}
+.week,.grid{display:grid;grid-template-columns:repeat(7,1fr);text-align:center}
+.week span{font-size:12px;color:var(--sub);padding-bottom:10px}
+.day{aspect-ratio:1;border:0;background:none;color:var(--text);font:inherit;font-size:17px;display:flex;align-items:center;justify-content:center;position:relative;border-radius:50%;margin:2px}
+.day.today{color:var(--accent);font-weight:700}
+.day.on{background:var(--accent);color:#fff;font-weight:600}
+.day.on.today{color:#fff}
+.day.future{color:var(--sub);opacity:.5}
+.day sup{position:absolute;top:6px;right:7px;font-size:10px;line-height:1}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}
+.stat{background:var(--card);border-radius:16px;padding:14px 12px}
+.stat b{display:block;font-size:26px;font-weight:700;letter-spacing:-.02em}
+.stat span{font-size:12px;color:var(--sub)}
+.back{position:fixed;inset:0;background:rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:opacity .2s}
+.back.show{opacity:1;pointer-events:auto}
+.sheet{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-radius:24px 24px 0 0;padding:24px 24px calc(env(safe-area-inset-bottom) + 24px);transform:translateY(100%);transition:transform .25s ease;max-width:480px;margin:0 auto;text-align:center}
+.sheet.show{transform:none}
+.sheet h2{margin:0 0 20px;font-size:17px;font-weight:600}
+.counter{display:flex;align-items:center;justify-content:center;gap:28px;margin-bottom:24px}
+.counter button{width:52px;height:52px;border-radius:26px;border:0;background:var(--accent-soft);color:var(--accent);font-size:28px}
+.counter button:active{opacity:.6}
+.counter output{font-size:48px;font-weight:700;min-width:60px}
+.done{width:100%;height:50px;border:0;border-radius:14px;background:var(--accent);color:#fff;font-size:17px;font-weight:600}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title"></h1>
+  <div class="nav"><button id="prev" aria-label="Назад">‹</button><button id="next" aria-label="Вперёд">›</button></div>
+</header>
+<div class="card">
+  <div class="week"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div>
+  <div class="grid" id="grid"></div>
+</div>
+<div class="stats">
+  <div class="stat"><b id="sMonth">0</b><span>в этом месяце</span></div>
+  <div class="stat"><b id="sStreak">0</b><span>дней подряд без</span></div>
+  <div class="stat"><b id="sTotal">0</b><span>всего</span></div>
+</div>
+<div class="back" id="back"></div>
+<div class="sheet" id="sheet">
+  <h2 id="sheetTitle"></h2>
+  <div class="counter"><button id="minus" aria-label="Меньше">−</button><output id="count">0</output><button id="plus" aria-label="Больше">+</button></div>
+  <button class="done" id="done">Готово</button>
+</div>
+<script>
+const KEY='cal-data';
+let data={};
+try{data=JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){}};
+const pad=n=>String(n).padStart(2,'0');
+const iso=(y,m,d)=>`${y}-${pad(m+1)}-${pad(d)}`;
+const now=new Date();
+const todayIso=iso(now.getFullYear(),now.getMonth(),now.getDate());
+let y=now.getFullYear(),m=now.getMonth(),sel=null;
+const $=id=>document.getElementById(id);
+
+function render(){
+  $('title').textContent=new Date(y,m,1).toLocaleDateString('ru-RU',{month:'long',year:'numeric'});
+  const first=(new Date(y,m,1).getDay()+6)%7, days=new Date(y,m+1,0).getDate();
+  let h='';
+  for(let i=0;i<first;i++)h+='<div></div>';
+  for(let d=1;d<=days;d++){
+    const k=iso(y,m,d), c=data[k]||0;
+    const cls=['day',c?'on':'',k===todayIso?'today':'',k>todayIso?'future':''].join(' ');
+    h+=`<button class="${cls}" data-k="${k}">${d}${c>1?`<sup>${c}</sup>`:''}</button>`;
+  }
+  $('grid').innerHTML=h;
+  const prefix=`${y}-${pad(m+1)}-`;
+  $('sMonth').textContent=Object.entries(data).filter(([k])=>k.startsWith(prefix)).reduce((s,[,v])=>s+v,0);
+  $('sTotal').textContent=Object.values(data).reduce((s,v)=>s+v,0);
+  const past=Object.keys(data).filter(k=>data[k]>0&&k<=todayIso).sort().pop();
+  if(!past)$('sStreak').textContent='—';
+  else $('sStreak').textContent=Math.round((new Date(todayIso)-new Date(past))/864e5);
+}
+function openSheet(k){
+  sel=k;
+  $('sheetTitle').textContent=new Date(k+'T12:00:00').toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'long'});
+  $('count').textContent=data[k]||0;
+  $('back').classList.add('show');$('sheet').classList.add('show');
+}
+function closeSheet(){$('back').classList.remove('show');$('sheet').classList.remove('show');sel=null;render()}
+function setCount(n){
+  n=Math.max(0,Math.min(20,n));
+  if(n)data[sel]=n;else delete data[sel];
+  $('count').textContent=n;save();
+}
+$('grid').addEventListener('click',e=>{const b=e.target.closest('.day');if(b&&b.dataset.k<=todayIso)openSheet(b.dataset.k)});
+$('plus').onclick=()=>setCount((data[sel]||0)+1);
+$('minus').onclick=()=>setCount((data[sel]||0)-1);
+$('done').onclick=closeSheet;$('back').onclick=closeSheet;
+$('prev').onclick=()=>{m--;if(m<0){m=11;y--}render()};
+$('next').onclick=()=>{m++;if(m>11){m=0;y++}render()};
+render();
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
